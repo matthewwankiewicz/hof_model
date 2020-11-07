@@ -1,0 +1,130 @@
+---
+title: "Using logistic regression to determine which Hall of Fame probability"
+author: "Matthew Wankiewicz"
+date: "06/11/2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F)
+library(tidyverse)
+library(Lahman)
+```
+
+```{r}
+#read in data
+career_totals <- readRDS("outputs/career_data.rds")
+view(HallOfFame)
+```
+
+
+# Introduction
+
+The baseball Hall of Fame is pretty exclusive, there are only 333 people that have been elected and not all of them are players. The number of players that end up going is very low, considering there have been about 1300 players eligible to be inducted, according to the Lahman database (@citeLahman). In this report, I use logistic regression to find probabilities of whether or not a player will make it to the Hall of Fame given their stats.
+
+# Data
+
+The data used for this report is from the Lahman Database (@citeLahman). There is a package in R (@citeR) created by Sean Lahman which contains various statistics for all players in the MLB, going back to the late 1800s! For this report, I focused on the `Batting` and `HallofFame` data sets to conduct my analysis. 
+
+In the scripts folder, there is a R script called `format_lahman.R`. This script contains the steps I used to clean the data and format it to include the player's hitting stats and their Hall of Fame status. 
+
+To make the statistics more sabermetric, I created a couple new variables, including wOBA (weight On Base Average) and BABIP (Batting Average on Balls in Play). These statistics can help determine which players are better than others and show how effective players are compared to others. 
+
+```{r}
+career_totals %>% 
+  ggplot(aes(H, wOBA)) +
+  geom_point()
+```
+
+
+```{r}
+career_totals %>% 
+  ggplot(aes(G, wOBA)) +
+  geom_point()
+```
+
+
+
+
+```{r}
+career_totals %>% 
+  ggplot(aes(H, BABIP)) +
+  geom_point()
+```
+
+
+
+# Model
+
+```{r}
+model <- glm(hof ~ wOBA + SB + HR +
+               SO + X2B + SH + CS,
+             data = career_totals,
+             family = binomial())
+coefficients <- broom::tidy(model)
+knitr::kable(coefficients) %>% 
+  kableExtra::kable_styling()
+```
+
+
+
+
+```{r}
+career_totals$estimate <- predict.glm(model,
+                                      newdata = career_totals,
+                                      type = "response")
+
+career_totals %>% 
+  ggplot(aes(estimate, hof)) + 
+  geom_point()
+```
+
+```{r}
+hitters <- Batting
+
+# filter out players who played after 2012,
+# those players likely aren't HOF eligible according to the data
+  
+hitters[is.na(hitters)] <- 0
+
+career_totals2 <- hitters %>% 
+  group_by(playerID) %>% 
+  summarise(G = sum(G),
+            AB = sum(AB),
+            R = sum(R),
+            H = sum(H),
+            X2B = sum(X2B),
+            X3B = sum(X3B),
+            HR = sum(HR),
+            RBI = sum(RBI),
+            SB = sum(SB),
+            CS = sum(CS),
+            BB = sum(BB),
+            SO = sum(SO),
+            IBB = sum(IBB),
+            HBP = sum(HBP),
+            SF = sum(SF),
+            SH = sum(SH),
+            GIDP = sum(GIDP))
+
+career_totals2 <- career_totals2 %>% 
+  mutate(X1B = H - X2B - X3B - HR,
+         AVG = round(H/AB, digits = 3),
+         wOBA = round((.69*(BB - IBB) + .72*HBP + .89*X1B + 1.27*X2B + 1.62*X3B + 2.1*HR)/(AB + BB - IBB + SF + HBP), 
+                      digits = 3),
+         BABIP = round((H - HR)/(AB - SO - HR + SF), digits = 3))
+
+career_totals2$estimate <- predict.glm(model,
+                                       newdata = career_totals2,
+                                       type = "response")
+career_totals2 <- career_totals2 %>% 
+  filter(G > 150) 
+career_totals2 <- inner_join(career_totals2, names, by = "playerID")
+```
+
+
+
+
+
+
+
